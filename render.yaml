@@ -2,7 +2,7 @@ services:
   - type: web
     name: pictionary-masivo
     runtime: docker
-    plan: starter
+    plan: free
     healthCheckPath: /healthz
     envVars:
       - key: NODE_ENV
@@ -15,7 +15,3 @@ services:
         sync: false
       - key: SESSION_SECRET
         generateValue: true
-    disk:
-      name: pictionary-data
-      mountPath: /app/data
-      sizeGB: 1

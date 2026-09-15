@@ -48,7 +48,9 @@ Si una fila es inválida o una palabra ya existe, no se importa ninguna fila.
 
 ### Render
 
-`render.yaml` crea el servicio Docker, healthcheck y disco de 1 GB en `/app/data`. Después de desplegar, configura `APP_ORIGIN` con el dominio público y `ADMIN_CODE` con un valor secreto.
+`render.yaml` crea gratuitamente el servicio Docker y su healthcheck. En **New → Blueprint**, conecta este repositorio y configura `APP_ORIGIN` con el dominio público exacto y `ADMIN_CODE` con un valor secreto. `SESSION_SECRET` se genera automáticamente.
+
+Render Free no admite discos persistentes: los snapshots funcionan mientras la instancia siga activa, pero se pierden al reiniciar, redesplegar o suspender el servicio. Evita desplegar cambios durante una partida.
 
 ### Railway
 
