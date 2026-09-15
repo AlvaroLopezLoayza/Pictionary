@@ -38,7 +38,7 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   if (!state) return <main className="center-page"><div className="loader">ABRIENDO PANEL...</div></main>;
   const players = (team: TeamId | null) => state.players.filter(p => p.teamId === team);
   return <main className="admin-page">
-    <header className="admin-header"><div><p className="eyebrow">CONTROL ROOM</p><h1>PICTIONARY MASIVO</h1></div><div className="admin-score"><span>A</span><strong>{state.scores.A}</strong><i>VS</i><strong>{state.scores.B}</strong><span>B</span></div><div className="header-actions"><a className="button secondary" href={`/host#${state.eventToken}`} target="_blank">Abrir Host</a><button className="button ghost" onClick={logout}>Salir</button></div></header>
+    <header className="admin-header"><div><p className="eyebrow">CONTROL ROOM</p><h1>GARABATO PARTY</h1></div><div className="admin-score"><span>A</span><strong>{state.scores.A}</strong><i>VS</i><strong>{state.scores.B}</strong><span>B</span></div><div className="header-actions"><a className="button secondary" href={`/host#${state.eventToken}`} target="_blank">Abrir Host</a><button className="button ghost" onClick={logout}>Salir</button></div></header>
     {notice && <div className="admin-notice" role="alert">{notice}<button onClick={() => setNotice('')}>×</button></div>}
     <div className="admin-grid">
       <section className="panel admin-game">

@@ -52,7 +52,7 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin, credentials: true }, maxHttpBufferSize: 1_000_000, pingInterval: 15_000, pingTimeout: 10_000 });
 const stopSockets = configureSocket(io, engine, store, auth);
 
-server.listen(port, '0.0.0.0', () => console.log(`Pictionary listo en ${origin}`));
+server.listen(port, '0.0.0.0', () => console.log(`Garabato Party listo en ${origin}`));
 
 const shutdown = async () => {
   stopSockets();

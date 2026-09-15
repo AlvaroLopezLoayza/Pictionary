@@ -18,7 +18,7 @@ function Landing() {
       <div className="landing-console">
         <div className="console-lights" aria-hidden="true"><i /><i /><i /><i /></div>
         <p className="eyebrow">ARCADE PARTY SYSTEM</p>
-        <h1>PICTIONARY<br /><span>MASIVO</span></h1>
+        <h1>GARABATO<br /><span>PARTY</span></h1>
         <p className="landing-copy">Dibuja. Adivina.<br />Conquista el marcador.</p>
         <div className="landing-actions">
           <a className="button primary play-button" href="/player"><i aria-hidden="true" />Entrar a jugar</a>

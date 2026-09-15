@@ -1,4 +1,4 @@
-# Pictionary Masivo
+# Garabato Party
 
 Juego para eventos en vivo con pantalla Host, panel Admin y hasta 100 jugadores móviles. Un único proceso Node sirve React y mantiene el estado autoritativo por Socket.io.
 
