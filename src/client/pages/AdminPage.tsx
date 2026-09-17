@@ -37,14 +37,17 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const logout = async () => { await fetch('/api/admin/session', { method: 'DELETE' }); socket.disconnect(); onLogout(); };
   if (!state) return <main className="center-page"><div className="loader">ABRIENDO PANEL...</div></main>;
   const players = (team: TeamId | null) => state.players.filter(p => p.teamId === team);
+  const connectedHumans = state.players.filter(player => !player.npc && player.connected).length;
+  const demoDrawer = state.mode === 'demo' ? state.players.find(player => player.drawer && !player.npc) : undefined;
   return <main className="admin-page">
-    <header className="admin-header"><div><p className="eyebrow">CONTROL ROOM</p><h1>GARABATO PARTY</h1></div><div className="admin-score"><span>A</span><strong>{state.scores.A}</strong><i>VS</i><strong>{state.scores.B}</strong><span>B</span></div><div className="header-actions"><a className="button secondary" href={`/host#${state.eventToken}`} target="_blank">Abrir Host</a><button className="button ghost" onClick={logout}>Salir</button></div></header>
+    <header className="admin-header"><div><p className="eyebrow">CONTROL ROOM</p><h1>GARABATO PARTY {state.mode === 'demo' && <span className="demo-badge">DEMO</span>}</h1></div><div className="admin-score"><span>A</span><strong>{state.scores.A}</strong><i>VS</i><strong>{state.scores.B}</strong><span>B</span></div><div className="header-actions"><a className="button secondary" href={`/host#${state.eventToken}`} target="_blank">Abrir Host</a><button className="button ghost" onClick={logout}>Salir</button></div></header>
     {notice && <div className="admin-notice" role="alert">{notice}<button onClick={() => setNotice('')}>×</button></div>}
     <div className="admin-grid">
       <section className="panel admin-game">
         <div className="section-title"><div><p className="eyebrow">PARTIDA</p><h2>Ronda {state.roundNumber ?? '—'} · {labelPhase(state.phase)}</h2></div>{state.currentWord && <div className="current-word"><span>PALABRA</span><strong>{state.currentWord.word}</strong></div>}</div>
+        {demoDrawer && <p className="demo-drawer-label">DIBUJANTE DEMO <strong>{demoDrawer.name}</strong></p>}
         <div className="control-grid">
-          {state.phase === 'lobby' && <><button className="button secondary" onClick={() => void send('admin:lobby:set', { open: !state.lobbyOpen })}>{state.lobbyOpen ? 'Cerrar lobby' : 'Abrir lobby'}</button><button className="button primary" onClick={() => void send('admin:match:start')}>Iniciar partida</button></>}
+          {state.phase === 'lobby' && <><button className="button secondary" onClick={() => void send('admin:lobby:set', { open: !state.lobbyOpen })}>{state.lobbyOpen ? 'Cerrar lobby' : 'Abrir lobby'}</button><button className="button primary" onClick={() => void send('admin:match:start')}>Iniciar partida</button><button className="button demo-button" disabled={connectedHumans !== 1} onClick={() => void send('admin:demo:start')}>Iniciar demo</button></>}
           {['reveal', 'drawing', 'grace', 'steal'].includes(state.phase) && <button className="button secondary" onClick={() => void send('admin:match:pause')}>Pausar</button>}
           {state.phase === 'paused' && <button className="button primary" onClick={() => void send('admin:match:resume')}>Reanudar</button>}
           {['results', 'betweenTurns'].includes(state.phase) && <button className="button primary" onClick={() => void send('admin:turn:next')}>Siguiente turno</button>}
@@ -52,6 +55,7 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           {!['lobby', 'finished'].includes(state.phase) && <button className="button danger" onClick={() => confirm('¿Terminar la partida ahora?') && void send('admin:match:finish')}>Terminar</button>}
           {state.phase === 'finished' && <button className="button danger" onClick={() => confirm('Se borrarán jugadores, equipos y puntajes. ¿Continuar?') && void send('admin:match:new')}>Nueva partida</button>}
         </div>
+        {state.phase === 'lobby' && <p className="demo-hint" aria-live="polite">Demo: conecta exactamente 1 dibujante por QR. Hay {connectedHumans} conectado{connectedHumans === 1 ? '' : 's'}.</p>}
         <div className="event-access">{qr && <img src={qr} alt="QR del evento" />}<div><span>ACCESO JUGADORES</span><code>{`${location.origin}/player#${state.eventToken}`}</code><small>{state.lobbyOpen ? 'Lobby abierto' : 'Lobby cerrado'} · {state.players.length}/100</small></div></div>
       </section>
       <section className="panel roster-panel"><div className="section-title"><div><p className="eyebrow">LOBBY</p><h2>Jugadores</h2></div><span className="status-pill">{state.players.filter(p => p.connected).length} conectados</span></div>

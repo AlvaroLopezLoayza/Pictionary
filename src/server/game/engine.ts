@@ -11,6 +11,16 @@ export type DomainEvent =
   | { type: 'draw'; action: 'start' | 'points' | 'end' | 'undo' | 'clear'; payload?: unknown };
 
 const otherTeam = (team: TeamId): TeamId => team === 'A' ? 'B' : 'A';
+const demoNpcs: Array<{ name: string; avatarId: number; teamId: TeamId }> = [
+  { name: 'Pixelín', avatarId: 0, teamId: 'A' },
+  { name: 'Chispa', avatarId: 2, teamId: 'A' },
+  { name: 'Tiza', avatarId: 4, teamId: 'A' },
+  { name: 'Borrón', avatarId: 6, teamId: 'A' },
+  { name: 'Pincel', avatarId: 1, teamId: 'B' },
+  { name: 'Mancha', avatarId: 3, teamId: 'B' },
+  { name: 'Garabato', avatarId: 5, teamId: 'B' },
+  { name: 'Croquis', avatarId: 7, teamId: 'B' },
+];
 const shuffled = <T>(items: T[]): T[] => {
   const copy = [...items];
   for (let i = copy.length - 1; i > 0; i--) {
@@ -30,6 +40,7 @@ export const normalizeAnswer = (value: string): string => value
 export const majorityFor = (eligible: number): number => eligible > 0 ? Math.floor(eligible / 2) + 1 : 0;
 
 export const freshMatch = (): MatchState => ({
+  mode: 'live', demoDrawerId: null,
   phase: 'lobby', resumePhase: null, phaseEndsAt: null, pausedRemainingMs: null,
   lobbyOpen: true, turnIndex: 0, startingTeam: Math.random() < .5 ? 'A' : 'B', turn: null,
   usedWordIds: [], drawerQueues: { A: [], B: [] }, scores: [],
@@ -122,8 +133,24 @@ export class GameEngine {
     const a = this.connectedTeam('A');
     const b = this.connectedTeam('B');
     if (a.length < 2 || b.length < 2 || a.length !== b.length) throw new GameError('UNBALANCED_TEAMS', 'Los equipos deben tener el mismo tamaño y al menos 2 jugadores conectados.');
-    if (this.availableWords('easy').length < 4 || this.availableWords('hard').length < 6) throw new GameError('WORD_BANK', 'Se requieren al menos 4 palabras fáciles y 6 difíciles habilitadas.');
+    this.assertWordBank();
     this.state.match = { ...freshMatch(), startingTeam: Math.random() < .5 ? 'A' : 'B', lobbyOpen: false };
+    this.startTurn(now);
+  }
+
+  startDemo(now = Date.now()): void {
+    if (this.state.match.phase !== 'lobby') throw new GameError('BAD_PHASE', 'La partida ya comenzó.');
+    const humans = this.state.players.filter(player => !player.npc && player.connected);
+    if (humans.length !== 1) throw new GameError('DEMO_PLAYERS', 'Conecta exactamente un dibujante para iniciar la demo.');
+    this.assertWordBank();
+    const drawer = humans[0];
+    drawer.teamId = null;
+    drawer.npc = false;
+    this.state.players = [drawer, ...demoNpcs.map(npc => ({
+      id: randomUUID(), name: npc.name, avatarId: npc.avatarId, teamId: npc.teamId,
+      connected: true, disconnectAt: null, sessionHash: this.hash(randomBytes(32).toString('base64url')), npc: true,
+    }))];
+    this.state.match = { ...freshMatch(), mode: 'demo', demoDrawerId: drawer.id, startingTeam: 'A', lobbyOpen: false };
     this.startTurn(now);
   }
 
@@ -144,9 +171,10 @@ export class GameEngine {
     if (!candidates.length) throw new GameError('NO_WORDS', `No quedan palabras ${difficulty === 'easy' ? 'fáciles' : 'difíciles'} sin usar.`);
     const word = candidates[Math.floor(Math.random() * candidates.length)];
     let queue = match.drawerQueues[activeTeamId].filter(id => this.isConnected(id));
-    if (!queue.length) queue = shuffled(this.connectedTeam(activeTeamId).map(p => p.id));
-    const drawerId = queue.shift();
+    if (match.mode !== 'demo' && !queue.length) queue = shuffled(this.connectedTeam(activeTeamId).map(p => p.id));
+    const drawerId = match.mode === 'demo' ? match.demoDrawerId : queue.shift();
     if (!drawerId) throw new GameError('NO_DRAWER', 'No hay dibujante conectado para este equipo.');
+    if (!this.isConnected(drawerId)) throw new GameError('DRAWER_OFFLINE', 'El dibujante debe estar conectado.');
     match.drawerQueues[activeTeamId] = queue;
     match.usedWordIds.push(word.id);
     match.turn = {
@@ -166,6 +194,7 @@ export class GameEngine {
         if (this.state.match.turn?.drawerId === player.id && ['reveal', 'drawing', 'grace'].includes(this.state.match.phase)) this.pause(now);
       }
     }
+    this.runDemo(now);
     if (this.state.match.phase === 'drawing') this.maybeReachMajority(now);
     const deadline = this.state.match.phaseEndsAt;
     if (deadline !== null && now >= deadline) {
@@ -196,6 +225,33 @@ export class GameEngine {
     const turn = this.turn();
     if (!this.connectedTeam(otherTeam(turn.activeTeamId)).length) return this.phase('results', null, now);
     this.phase('steal', 10_000, now);
+  }
+
+  private runDemo(now: number): void {
+    const match = this.state.match;
+    const turn = match.turn;
+    if (match.mode !== 'demo' || !turn) return;
+    const pattern = turn.index % 4;
+    const word = this.word(turn.wordId).word;
+    const active = this.connectedTeam(turn.activeTeamId).filter(player => player.npc);
+    if (match.phase === 'drawing' && turn.drawingStartedAt !== null) {
+      const elapsed = now - turn.drawingStartedAt;
+      const schedule = pattern === 0 ? [8_000, 12_000, 16_000] : pattern === 2 ? [25_000, 35_000, 45_000] : [];
+      for (let index = 0; index < schedule.length; index++) {
+        const npc = active[index];
+        if (npc && elapsed >= schedule[index] && !turn.correctAt[npc.id]) this.submitGuess(npc.id, word, now);
+      }
+    }
+    if (match.phase === 'grace' && pattern === 0) {
+      const graceStartedAt = (match.phaseEndsAt ?? now) - 5_000;
+      const npc = active.find(player => !turn.correctAt[player.id]);
+      if (npc && now - graceStartedAt >= 2_000) this.submitGuess(npc.id, word, now);
+    }
+    if (match.phase === 'steal' && pattern === 1) {
+      const stealStartedAt = (match.phaseEndsAt ?? now) - 10_000;
+      const npc = this.connectedTeam(otherTeam(turn.activeTeamId)).find(player => player.npc && !turn.correctAt[player.id]);
+      if (npc && now - stealStartedAt >= 3_000) this.submitGuess(npc.id, word, now);
+    }
   }
 
   submitGuess(playerId: string, answer: string, now = Date.now()): 'correct' | 'incorrect' {
@@ -374,12 +430,12 @@ export class GameEngine {
     const turn = this.state.match.turn;
     const activeEligible = turn ? this.connectedTeam(turn.activeTeamId).filter(p => p.id !== turn.drawerId) : [];
     const result: PublicState = {
-      version: this.revision, serverNow: now, phase: this.state.match.phase,
+      version: this.revision, serverNow: now, mode: this.state.match.mode ?? 'live', phase: this.state.match.phase,
       phaseEndsAt: this.state.match.phaseEndsAt, roundNumber: turn?.roundNumber ?? null,
       turnNumber: this.state.match.turnIndex + 1, activeTeamId: turn?.activeTeamId ?? null,
       scores: { A: this.score('A'), B: this.score('B') },
       players: this.state.players.map(p => ({
-        id: p.id, name: p.name, avatarId: p.avatarId, teamId: p.teamId, connected: p.connected,
+        id: p.id, name: p.name, avatarId: p.avatarId, teamId: p.teamId, connected: p.connected, npc: Boolean(p.npc),
         knows: Boolean(turn?.correctAt[p.id]), drawer: turn?.drawerId === p.id,
       })),
       guessed: activeEligible.filter(p => Boolean(turn?.correctAt[p.id])).length,
@@ -416,9 +472,9 @@ export class GameEngine {
   private role(playerId: string): PlayerRole {
     const player = this.player(playerId);
     const turn = this.state.match.turn;
-    if (!player.teamId) return 'unassigned';
-    if (!turn) return 'waiting';
+    if (!turn) return player.teamId ? 'waiting' : 'unassigned';
     if (turn.drawerId === playerId) return 'drawer';
+    if (!player.teamId) return 'unassigned';
     if (player.teamId === turn.activeTeamId) return 'guesser';
     if (this.state.match.phase === 'steal') return 'stealer';
     return 'rival';
@@ -430,6 +486,9 @@ export class GameEngine {
   }
   private assertUniqueWord(word: string, except?: string): void {
     if (this.state.words.some(w => w.id !== except && normalizeAnswer(w.word) === normalizeAnswer(word))) throw new GameError('DUPLICATE_WORD', 'Esa palabra ya existe.');
+  }
+  private assertWordBank(): void {
+    if (this.availableWords('easy').length < 4 || this.availableWords('hard').length < 6) throw new GameError('WORD_BANK', 'Se requieren al menos 4 palabras fáciles y 6 difíciles habilitadas.');
   }
   private connectedTeam(teamId: TeamId): Player[] { return this.state.players.filter(p => p.teamId === teamId && p.connected); }
   private isConnected(id: string): boolean { return Boolean(this.state.players.find(p => p.id === id)?.connected); }

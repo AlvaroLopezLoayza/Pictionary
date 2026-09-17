@@ -1,4 +1,5 @@
 export type TeamId = 'A' | 'B';
+export type MatchMode = 'live' | 'demo';
 export type Difficulty = 'easy' | 'hard';
 export type Phase = 'lobby' | 'betweenTurns' | 'reveal' | 'drawing' | 'grace' | 'steal' | 'results' | 'paused' | 'finished';
 export type ScoreReason = 'normal' | 'grace' | 'speed' | 'full-team' | 'steal';
@@ -14,6 +15,7 @@ export interface Player {
   connected: boolean;
   disconnectAt: number | null;
   sessionHash: string;
+  npc?: boolean;
 }
 
 export interface WordCard {
@@ -49,6 +51,8 @@ export interface TurnState {
 }
 
 export interface MatchState {
+  mode: MatchMode;
+  demoDrawerId: string | null;
   phase: Phase;
   resumePhase: Phase | null;
   phaseEndsAt: number | null;
@@ -77,6 +81,7 @@ export interface PublicPlayer {
   avatarId: number;
   teamId: TeamId | null;
   connected: boolean;
+  npc: boolean;
   knows: boolean;
   drawer: boolean;
 }
@@ -84,6 +89,7 @@ export interface PublicPlayer {
 export interface PublicState {
   version: number;
   serverNow: number;
+  mode: MatchMode;
   phase: Phase;
   phaseEndsAt: number | null;
   roundNumber: number | null;

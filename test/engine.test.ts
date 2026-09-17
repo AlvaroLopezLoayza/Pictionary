@@ -26,12 +26,79 @@ function prepared(size = 4, now = 1_000) {
   return engine;
 }
 
+function demo(now = 1_000) {
+  const engine = GameEngine.create(words());
+  const drawer = engine.register(engine.state.eventToken, 'Dibujante', 9);
+  engine.startDemo(now);
+  return { engine, drawerId: drawer.playerId };
+}
+
+function playDemoTurn(engine: GameEngine): number {
+  engine.tick(engine.state.match.phaseEndsAt!);
+  const turn = engine.state.match.turn!;
+  const startedAt = turn.drawingStartedAt!;
+  const pattern = turn.index % 4;
+  let now = startedAt;
+  if (pattern === 0) {
+    for (const delay of [8_000, 12_000, 16_000]) engine.tick(now = startedAt + delay);
+    engine.tick(now = engine.state.match.phaseEndsAt! - 3_000);
+    engine.tick(now = engine.state.match.phaseEndsAt!);
+  } else if (pattern === 1) {
+    engine.tick(now = engine.state.match.phaseEndsAt!);
+    engine.tick(now = engine.state.match.phaseEndsAt! - 7_000);
+  } else if (pattern === 2) {
+    for (const delay of [25_000, 35_000, 45_000]) engine.tick(now = startedAt + delay);
+    engine.tick(now = engine.state.match.phaseEndsAt!);
+  } else {
+    engine.tick(now = engine.state.match.phaseEndsAt!);
+    engine.tick(now = engine.state.match.phaseEndsAt!);
+  }
+  assert.equal(engine.state.match.phase, 'results');
+  return now;
+}
+
 test('normaliza mayúsculas, tildes y espacios sin fuzzy matching', () => {
   assert.equal(normalizeAnswer('  CAFÉ  '), 'cafe');
   assert.equal(normalizeAnswer('Trabajo   en Equipo'), 'trabajo en equipo');
   assert.notEqual(normalizeAnswer('izla'), normalizeAnswer('isla'));
   assert.equal(majorityFor(6), 4);
   assert.equal(majorityFor(5), 3);
+});
+
+test('demo exige un humano y crea ocho NPCs balanceados', () => {
+  const empty = GameEngine.create(words());
+  assert.throws(() => empty.startDemo(), (error: unknown) => error instanceof GameError && error.code === 'DEMO_PLAYERS');
+  empty.register(empty.state.eventToken, 'Uno', 0);
+  empty.register(empty.state.eventToken, 'Dos', 1);
+  assert.throws(() => empty.startDemo(), (error: unknown) => error instanceof GameError && error.code === 'DEMO_PLAYERS');
+
+  const { engine, drawerId } = demo();
+  assert.equal(engine.state.match.mode, 'demo');
+  assert.equal(engine.state.match.demoDrawerId, drawerId);
+  assert.equal(engine.state.players.find(player => player.id === drawerId)?.teamId, null);
+  assert.equal(engine.state.players.filter(player => player.npc).length, 8);
+  assert.equal(engine.state.players.filter(player => player.npc && player.teamId === 'A').length, 4);
+  assert.equal(engine.state.players.filter(player => player.npc && player.teamId === 'B').length, 4);
+  assert.equal(engine.publicState().players.filter(player => player.npc).length, 8);
+  assert.throws(() => engine.startDemo(), (error: unknown) => error instanceof GameError && error.code === 'BAD_PHASE');
+});
+
+test('demo mantiene al humano dibujando y recorre los cuatro guiones durante diez turnos', () => {
+  const { engine, drawerId } = demo();
+  let now = 1_000;
+  for (let index = 0; index < 10; index++) {
+    const turn = engine.state.match.turn!;
+    assert.equal(turn.index, index);
+    assert.equal(turn.drawerId, drawerId);
+    now = playDemoTurn(engine);
+    const reasons = engine.state.match.scores.filter(entry => entry.turnId === turn.id).map(entry => entry.reason);
+    if (index % 4 === 0) assert.deepEqual(reasons.sort(), ['grace', 'normal', 'normal', 'normal', 'speed']);
+    if (index % 4 === 1) assert.deepEqual(reasons, ['steal']);
+    if (index % 4 === 2) assert.deepEqual(reasons, ['normal', 'normal', 'normal']);
+    if (index % 4 === 3) assert.deepEqual(reasons, []);
+    engine.nextTurn(now + 1);
+  }
+  assert.equal(engine.state.match.phase, 'finished');
 });
 
 test('acierto temprano de todo el equipo suma normal, velocidad y equipo completo', () => {
@@ -126,5 +193,22 @@ test('snapshot activo se restaura pausado con el tiempo restante', async () => {
     assert.equal(restored.state.match.resumePhase, 'drawing');
     assert.ok((restored.state.match.pausedRemainingMs ?? 0) > 0);
     assert.equal(restored.state.players.every(p => !p.connected), true);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('snapshot demo conserva NPCs conectados y espera al dibujante', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'garabato-demo-'));
+  try {
+    const store = new StateStore(dir);
+    const { engine, drawerId } = demo(Date.now());
+    await store.save(engine.state);
+    const restored = await store.load();
+    assert.equal(restored.state.match.mode, 'demo');
+    assert.equal(restored.state.match.phase, 'paused');
+    assert.equal(restored.state.players.filter(player => player.npc).every(player => player.connected), true);
+    assert.equal(restored.state.players.find(player => player.id === drawerId)?.connected, false);
+    restored.newMatch();
+    assert.equal(restored.state.match.mode, 'live');
+    assert.equal(restored.state.players.length, 0);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

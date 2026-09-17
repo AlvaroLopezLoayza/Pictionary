@@ -17,7 +17,9 @@ export class StateStore {
     try {
       const state = JSON.parse(await readFile(this.file, 'utf8')) as PersistedState;
       if (state.version !== 1) throw new Error('Versión de snapshot no soportada');
-      state.players.forEach(player => { player.connected = false; player.disconnectAt = null; });
+      state.match.mode ??= 'live';
+      state.match.demoDrawerId ??= null;
+      state.players.forEach(player => { player.connected = Boolean(player.npc); player.disconnectAt = null; });
       const phase = state.match.phase;
       if (!['lobby', 'finished', 'paused'].includes(phase)) {
         state.match.resumePhase = phase;

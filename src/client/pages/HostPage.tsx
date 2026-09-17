@@ -39,12 +39,14 @@ export function HostPage() {
   if (!state) return <main className="center-page scanlines"><div className="loader">CARGANDO PARTIDA...</div></main>;
 
   const teams = (id: TeamId) => state.players.filter(p => p.teamId === id);
+  const demoDrawer = state.mode === 'demo' ? state.players.find(player => player.drawer && !player.npc) : undefined;
   return <main className="host-page scanlines">
     <Scoreboard a={state.scores.A} b={state.scores.B} center={<div className="host-timer"><Timer endsAt={state.phaseEndsAt} serverNow={state.serverNow} urgent={state.phase === 'grace'} /><small>{phaseText[state.phase]}</small></div>} />
     <section className="host-stage">
       <TeamRail team="A" players={teams('A')} guessed={state.activeTeamId === 'A' ? state.guessed : 0} eligible={state.activeTeamId === 'A' ? state.eligible : teams('A').length} />
       <div className="host-canvas-area">
-        <div className="round-strip"><span>RONDA {state.roundNumber ?? '—'}/5</span><strong>{state.activeTeamId ? `TURNO EQUIPO ${state.activeTeamId}` : phaseText[state.phase]}</strong></div>
+        <div className="round-strip"><span>RONDA {state.roundNumber ?? '—'}/5 {state.mode === 'demo' && <b className="demo-badge">DEMO</b>}</span><strong>{state.activeTeamId ? `TURNO EQUIPO ${state.activeTeamId}` : phaseText[state.phase]}</strong></div>
+        {demoDrawer && <div className="host-demo-drawer">DIBUJANTE DEMO · {demoDrawer.name}</div>}
         <GameCanvas strokes={state.strokes} />
         {state.phase === 'lobby' && <div className="canvas-overlay lobby-overlay">
           {qr && <img src={qr} alt="Código QR para entrar al evento" />}

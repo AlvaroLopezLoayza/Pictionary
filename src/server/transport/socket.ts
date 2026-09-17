@@ -135,6 +135,7 @@ export function configureSocket(io: Server, engine: GameEngine, store: StateStor
     socket.on('admin:player:remove', action(socket, playerIdSchema, v => engine.removePlayer(v.playerId), { admin: true }));
     socket.on('admin:lobby:set', action(socket, lobbySchema, v => engine.setLobby(v.open), { admin: true }));
     socket.on('admin:match:start', noPayload(socket, () => engine.startMatch()));
+    socket.on('admin:demo:start', noPayload(socket, () => engine.startDemo()));
     socket.on('admin:match:pause', noPayload(socket, () => engine.pause()));
     socket.on('admin:match:resume', noPayload(socket, () => engine.resumeGame()));
     socket.on('admin:turn:next', noPayload(socket, () => engine.nextTurn()));

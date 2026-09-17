@@ -33,6 +33,7 @@ function Landing() {
         <p>READY?</p>
       </div>
     </section>
+    <small className="landing-signature">Made by LoNez</small>
   </main>;
 }
 

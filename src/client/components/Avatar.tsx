@@ -4,6 +4,7 @@ export function Avatar({ player, compact = false }: { player: PublicPlayer; comp
   return (
     <div className={`avatar-card team-${player.teamId ?? 'none'} ${player.knows ? 'knows' : ''} ${player.connected ? '' : 'offline'} ${compact ? 'compact' : ''}`}>
       {player.knows && <span className="knows-badge" aria-label="Sabe la respuesta">LO SABE</span>}
+      {player.npc && <span className="npc-badge">NPC</span>}
       {player.drawer && <span className="pencil-badge" aria-label="Dibujante">✎</span>}
       <svg className={`pixel-avatar avatar-tone-${player.avatarId}`} viewBox="0 0 48 48" role="img" aria-label={`Avatar de ${player.name}`}>
         <path className="avatar-shadow" d="M9 42h30v4H9z" />

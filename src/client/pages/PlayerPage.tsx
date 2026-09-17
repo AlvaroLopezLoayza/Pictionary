@@ -31,7 +31,11 @@ export function PlayerPage() {
   return <main className={`player-page team-bg-${state.self.teamId ?? 'none'}`}>
     <Scoreboard a={state.scores.A} b={state.scores.B} center={<Timer endsAt={state.phaseEndsAt} serverNow={state.serverNow} urgent={state.phase === 'grace'} />} />
     <section className="player-content">
-      <div className="player-identity"><Avatar player={state.self} compact /><div><span>{state.self.name}</span><strong>{state.self.teamId ? `EQUIPO ${state.self.teamId}` : 'SIN EQUIPO'}</strong></div></div>
+      <div className="player-identity"><Avatar player={state.self} compact /><div><span>{state.self.name}</span><strong>{state.mode === 'demo' ? 'DIBUJANTE DEMO' : state.self.teamId ? `EQUIPO ${state.self.teamId}` : 'SIN EQUIPO'}</strong></div></div>
+      {state.mode === 'demo' && <section className="demo-party" aria-label="Jugadores NPC de la demo">
+        <span className="demo-badge">DEMO</span>
+        <div>{state.players.filter(player => player.npc).map(player => <Avatar key={player.id} player={player} compact />)}</div>
+      </section>}
       <RoleView state={state} socket={socket} setError={setError} />
       {error && <div className="error-box" role="alert">{error}<button aria-label="Cerrar" onClick={() => setError('')}>×</button></div>}
     </section>
@@ -51,7 +55,7 @@ function Registration({ socket, eventToken, error, setError }: { socket: Socket;
     <label>Tu nombre<input value={name} onChange={e => setName(e.target.value)} minLength={2} maxLength={20} autoComplete="nickname" required /></label>
     <div className="avatar-picker" role="radiogroup" aria-label="Avatares">
       {Array.from({ length: 12 }, (_, id) => {
-        const fake: PublicPlayer = { id: String(id), name: `P${id + 1}`, avatarId: id, teamId: null, connected: true, knows: false, drawer: false };
+        const fake: PublicPlayer = { id: String(id), name: `P${id + 1}`, avatarId: id, teamId: null, connected: true, npc: false, knows: false, drawer: false };
         return <button type="button" className={avatarId === id ? 'selected' : ''} onClick={() => setAvatarId(id)} aria-label={`Avatar ${id + 1}`} aria-pressed={avatarId === id} key={id}><Avatar player={fake} compact /></button>;
       })}
     </div>

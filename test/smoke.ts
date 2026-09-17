@@ -31,6 +31,10 @@ for (const stale of adminState.players.filter(player => player.name.startsWith('
 const host = io(url, { auth: { viewer: 'host', eventToken: adminState.eventToken }, transports: ['websocket'] });
 const publicPromise = once<PublicState>(host, 'state:public');
 const player = io(url, { auth: { viewer: 'player', eventToken: adminState.eventToken }, transports: ['websocket'] });
+await once<void>(player, 'connect');
+const deniedDemo = await emit(player, 'admin:demo:start');
+assert.equal(deniedDemo.ok, false);
+if (!deniedDemo.ok) assert.equal(deniedDemo.code, 'FORBIDDEN');
 const playerPromise = once<PlayerState>(player, 'state:player');
 const registration = await emit<{ playerId: string; token: string }>(player, 'player:register', {
   eventToken: adminState.eventToken, name: `Smoke ${Date.now().toString().slice(-6)}`, avatarId: 3,
