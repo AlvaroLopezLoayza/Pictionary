@@ -29,9 +29,9 @@ for (const stale of adminState.players.filter(player => player.name.startsWith('
   assert.equal(cleanup.ok, true);
 }
 
-const host = io(url, { auth: { viewer: 'host', eventToken: adminState.eventToken }, transports: ['websocket'] });
+const host = io(url, { auth: { viewer: 'host', eventToken: adminState.eventToken }, extraHeaders: { Cookie: cookie }, transports: ['websocket'] });
 const publicPromise = once<PublicState>(host, 'state:public');
-const player = io(url, { auth: { viewer: 'player', eventToken: adminState.eventToken }, transports: ['websocket'] });
+const player = io(url, { auth: { viewer: 'player', eventToken: adminState.eventToken }, extraHeaders: { Cookie: cookie }, transports: ['websocket'] });
 await once<void>(player, 'connect');
 const deniedDemo = await emit(player, 'admin:demo:start', { drawerId: randomUUID() });
 assert.equal(deniedDemo.ok, false);

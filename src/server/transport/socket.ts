@@ -94,12 +94,13 @@ export function configureSocket(io: Server, engine: GameEngine, store: StateStor
     const handshake = socket.handshake.auth as Record<string, unknown>;
     const isAdmin = auth.validCookie(socket.handshake.headers.cookie);
     const eventToken = typeof handshake.eventToken === 'string' ? handshake.eventToken : '';
-    const viewer = handshake.viewer === 'host' ? 'host' : 'anonymous';
-    (socket.data as SocketData).role = isAdmin ? 'admin' : eventToken === engine.state.eventToken ? viewer : 'anonymous';
+    const viewer = handshake.viewer === 'host' || handshake.viewer === 'player' ? handshake.viewer : null;
+    const validEvent = eventToken === engine.state.eventToken;
+    (socket.data as SocketData).role = viewer === 'host' && validEvent ? 'host' : !viewer && isAdmin ? 'admin' : 'anonymous';
     (socket.data as SocketData).eventToken = eventToken || undefined;
 
     const resumeToken = typeof handshake.playerToken === 'string' ? handshake.playerToken : '';
-    if (!isAdmin && eventToken === engine.state.eventToken && resumeToken) {
+    if (viewer === 'player' && validEvent && resumeToken) {
       try {
         const player = engine.resumePlayer(resumeToken);
         (socket.data as SocketData).role = 'player';
