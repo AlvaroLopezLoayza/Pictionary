@@ -29,8 +29,9 @@ function prepared(size = 4, now = 1_000) {
 function demo(now = 1_000) {
   const engine = GameEngine.create(words());
   const drawer = engine.register(engine.state.eventToken, 'Dibujante', 9);
-  engine.startDemo(now);
-  return { engine, drawerId: drawer.playerId };
+  const guesser = engine.register(engine.state.eventToken, 'Adivinador', 10);
+  engine.startDemo(drawer.playerId, now);
+  return { engine, drawerId: drawer.playerId, drawerToken: drawer.token, guesserId: guesser.playerId, guesserToken: guesser.token };
 }
 
 function playDemoTurn(engine: GameEngine): number {
@@ -65,25 +66,30 @@ test('normaliza mayúsculas, tildes y espacios sin fuzzy matching', () => {
   assert.equal(majorityFor(5), 3);
 });
 
-test('demo exige un humano y crea ocho NPCs balanceados', () => {
+test('demo exige dos humanos, roles válidos y crea ocho NPCs balanceados', () => {
   const empty = GameEngine.create(words());
-  assert.throws(() => empty.startDemo(), (error: unknown) => error instanceof GameError && error.code === 'DEMO_PLAYERS');
-  empty.register(empty.state.eventToken, 'Uno', 0);
+  assert.throws(() => empty.startDemo(randomUUID()), (error: unknown) => error instanceof GameError && error.code === 'DEMO_PLAYERS');
+  const one = empty.register(empty.state.eventToken, 'Uno', 0);
+  assert.throws(() => empty.startDemo(one.playerId), (error: unknown) => error instanceof GameError && error.code === 'DEMO_PLAYERS');
   empty.register(empty.state.eventToken, 'Dos', 1);
-  assert.throws(() => empty.startDemo(), (error: unknown) => error instanceof GameError && error.code === 'DEMO_PLAYERS');
+  assert.throws(() => empty.startDemo(randomUUID()), (error: unknown) => error instanceof GameError && error.code === 'DEMO_DRAWER');
 
-  const { engine, drawerId } = demo();
+  const { engine, drawerId, guesserId } = demo();
   assert.equal(engine.state.match.mode, 'demo');
   assert.equal(engine.state.match.demoDrawerId, drawerId);
+  assert.equal(engine.state.match.demoGuesserId, guesserId);
   assert.equal(engine.state.players.find(player => player.id === drawerId)?.teamId, null);
+  assert.equal(engine.state.players.find(player => player.id === guesserId)?.teamId, null);
   assert.equal(engine.state.players.filter(player => player.npc).length, 8);
   assert.equal(engine.state.players.filter(player => player.npc && player.teamId === 'A').length, 4);
   assert.equal(engine.state.players.filter(player => player.npc && player.teamId === 'B').length, 4);
   assert.equal(engine.publicState().players.filter(player => player.npc).length, 8);
-  assert.throws(() => engine.startDemo(), (error: unknown) => error instanceof GameError && error.code === 'BAD_PHASE');
+  assert.equal(engine.publicState().players.find(player => player.id === drawerId)?.demoRole, 'drawer');
+  assert.equal(engine.publicState().players.find(player => player.id === guesserId)?.demoRole, 'guesser');
+  assert.throws(() => engine.startDemo(drawerId), (error: unknown) => error instanceof GameError && error.code === 'BAD_PHASE');
 });
 
-test('demo mantiene al humano dibujando y recorre los cuatro guiones durante diez turnos', () => {
+test('demo mantiene los roles humanos y recorre los cuatro guiones durante diez turnos', () => {
   const { engine, drawerId } = demo();
   let now = 1_000;
   for (let index = 0; index < 10; index++) {
@@ -99,6 +105,46 @@ test('demo mantiene al humano dibujando y recorre los cuatro guiones durante die
     engine.nextTurn(now + 1);
   }
   assert.equal(engine.state.match.phase, 'finished');
+});
+
+test('adivinador demo responde para el equipo activo y durante el robo', () => {
+  const { engine, guesserId } = demo();
+  engine.tick(engine.state.match.phaseEndsAt!);
+  let turn = engine.state.match.turn!;
+  let word = engine.state.words.find(item => item.id === turn.wordId)!;
+  assert.equal(engine.playerState(guesserId).role, 'guesser');
+  engine.submitGuess(guesserId, word.word, turn.drawingStartedAt! + 1_000);
+  assert.equal(engine.state.match.scores.at(-1)?.teamId, turn.activeTeamId);
+  engine.tick(engine.state.match.phaseEndsAt!);
+  engine.tick(engine.state.match.phaseEndsAt!);
+  engine.nextTurn();
+
+  engine.tick(engine.state.match.phaseEndsAt!);
+  turn = engine.state.match.turn!;
+  word = engine.state.words.find(item => item.id === turn.wordId)!;
+  engine.tick(engine.state.match.phaseEndsAt!);
+  assert.equal(engine.playerState(guesserId).role, 'stealer');
+  engine.submitGuess(guesserId, word.word);
+  assert.equal(engine.state.match.scores.at(-1)?.reason, 'steal');
+  assert.equal(engine.state.match.scores.at(-1)?.teamId, turn.activeTeamId === 'A' ? 'B' : 'A');
+});
+
+test('demo se pausa y exige reconexión de ambos humanos', () => {
+  const { engine, drawerId, drawerToken, guesserId, guesserToken } = demo();
+  engine.tick(engine.state.match.phaseEndsAt!);
+  const now = engine.state.match.turn!.drawingStartedAt! + 1_000;
+  engine.disconnect(guesserId, now);
+  engine.tick(now + 5_000);
+  assert.equal(engine.state.match.phase, 'paused');
+  assert.throws(() => engine.resumeGame(), (error: unknown) => error instanceof GameError && error.code === 'GUESSER_OFFLINE');
+  engine.resumePlayer(guesserToken);
+  engine.resumeGame(now + 6_000);
+  engine.disconnect(drawerId, now + 7_000);
+  engine.tick(now + 12_000);
+  assert.equal(engine.state.match.phase, 'paused');
+  engine.resumePlayer(drawerToken);
+  engine.resumeGame(now + 13_000);
+  assert.equal(engine.state.match.phase, 'drawing');
 });
 
 test('acierto temprano de todo el equipo suma normal, velocidad y equipo completo', () => {
@@ -196,17 +242,18 @@ test('snapshot activo se restaura pausado con el tiempo restante', async () => {
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('snapshot demo conserva NPCs conectados y espera al dibujante', async () => {
+test('snapshot demo conserva NPCs conectados y espera a ambos humanos', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'garabato-demo-'));
   try {
     const store = new StateStore(dir);
-    const { engine, drawerId } = demo(Date.now());
+    const { engine, drawerId, guesserId } = demo(Date.now());
     await store.save(engine.state);
     const restored = await store.load();
     assert.equal(restored.state.match.mode, 'demo');
     assert.equal(restored.state.match.phase, 'paused');
     assert.equal(restored.state.players.filter(player => player.npc).every(player => player.connected), true);
     assert.equal(restored.state.players.find(player => player.id === drawerId)?.connected, false);
+    assert.equal(restored.state.players.find(player => player.id === guesserId)?.connected, false);
     restored.newMatch();
     assert.equal(restored.state.match.mode, 'live');
     assert.equal(restored.state.players.length, 0);

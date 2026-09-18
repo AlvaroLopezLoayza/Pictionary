@@ -19,6 +19,7 @@ export class StateStore {
       if (state.version !== 1) throw new Error('Versión de snapshot no soportada');
       state.match.mode ??= 'live';
       state.match.demoDrawerId ??= null;
+      state.match.demoGuesserId ??= null;
       state.players.forEach(player => { player.connected = Boolean(player.npc); player.disconnectAt = null; });
       const phase = state.match.phase;
       if (!['lobby', 'finished', 'paused'].includes(phase)) {

@@ -39,20 +39,20 @@ export function HostPage() {
   if (!state) return <main className="center-page scanlines"><div className="loader">CARGANDO PARTIDA...</div></main>;
 
   const teams = (id: TeamId) => state.players.filter(p => p.teamId === id);
-  const demoDrawer = state.mode === 'demo' ? state.players.find(player => player.drawer && !player.npc) : undefined;
+  const demoHumans = state.mode === 'demo' ? state.players.filter(player => player.demoRole) : [];
   return <main className="host-page scanlines">
     <Scoreboard a={state.scores.A} b={state.scores.B} center={<div className="host-timer"><Timer endsAt={state.phaseEndsAt} serverNow={state.serverNow} urgent={state.phase === 'grace'} /><small>{phaseText[state.phase]}</small></div>} />
     <section className="host-stage">
       <TeamRail team="A" players={teams('A')} guessed={state.activeTeamId === 'A' ? state.guessed : 0} eligible={state.activeTeamId === 'A' ? state.eligible : teams('A').length} />
       <div className="host-canvas-area">
         <div className="round-strip"><span>RONDA {state.roundNumber ?? '—'}/5 {state.mode === 'demo' && <b className="demo-badge">DEMO</b>}</span><strong>{state.activeTeamId ? `TURNO EQUIPO ${state.activeTeamId}` : phaseText[state.phase]}</strong></div>
-        {demoDrawer && <div className="host-demo-drawer">DIBUJANTE DEMO · {demoDrawer.name}</div>}
+        {demoHumans.length > 0 && <div className="host-demo-roles">{demoHumans.map(player => <span key={player.id}><b>{player.demoRole === 'drawer' ? 'DIBUJA' : 'ADIVINA'}</b> {player.name}</span>)}</div>}
         <GameCanvas strokes={state.strokes} />
         {state.phase === 'lobby' && <div className="canvas-overlay lobby-overlay">
           {qr && <img src={qr} alt="Código QR para entrar al evento" />}
           <h2>ESCANEA Y ENTRA</h2><p>{state.players.length}/100 jugadores</p>
         </div>}
-        {state.phase === 'paused' && <div className="canvas-overlay"><h2>JUEGO EN PAUSA</h2><p>Esperando al administrador</p></div>}
+        {state.phase === 'paused' && <div className="canvas-overlay"><h2>JUEGO EN PAUSA</h2><p>{state.players.some(player => player.demoRole && !player.connected) ? `Esperando a ${state.players.filter(player => player.demoRole && !player.connected).map(player => player.name).join(' y ')}` : 'El Admin reanudará la partida'}</p></div>}
         {state.phase === 'results' && <div className="canvas-overlay result-overlay"><p>LA PALABRA ERA</p><h2>{state.lastWord}</h2></div>}
         {state.phase === 'finished' && <div className="canvas-overlay result-overlay"><p>CAMPEÓN</p><h2>{state.scores.A === state.scores.B ? 'EMPATE' : `EQUIPO ${state.scores.A > state.scores.B ? 'A' : 'B'}`}</h2></div>}
       </div>

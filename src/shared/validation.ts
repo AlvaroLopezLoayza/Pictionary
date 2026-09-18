@@ -9,6 +9,7 @@ export const tokenSchema = z.object({ token: z.string().min(20).max(200) });
 export const guessSchema = z.object({ answer: z.string().trim().min(1).max(80) });
 export const teamSchema = z.object({ playerId: z.string().uuid(), teamId: z.enum(['A', 'B']).nullable() });
 export const playerIdSchema = z.object({ playerId: z.string().uuid() });
+export const demoStartSchema = z.object({ drawerId: z.string().uuid() });
 export const lobbySchema = z.object({ open: z.boolean() });
 export const wordSchema = z.object({
   id: z.string().uuid().optional(),

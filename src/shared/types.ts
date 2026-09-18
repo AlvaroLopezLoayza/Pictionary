@@ -1,5 +1,6 @@
 export type TeamId = 'A' | 'B';
 export type MatchMode = 'live' | 'demo';
+export type DemoRole = 'drawer' | 'guesser';
 export type Difficulty = 'easy' | 'hard';
 export type Phase = 'lobby' | 'betweenTurns' | 'reveal' | 'drawing' | 'grace' | 'steal' | 'results' | 'paused' | 'finished';
 export type ScoreReason = 'normal' | 'grace' | 'speed' | 'full-team' | 'steal';
@@ -53,6 +54,7 @@ export interface TurnState {
 export interface MatchState {
   mode: MatchMode;
   demoDrawerId: string | null;
+  demoGuesserId: string | null;
   phase: Phase;
   resumePhase: Phase | null;
   phaseEndsAt: number | null;
@@ -82,6 +84,7 @@ export interface PublicPlayer {
   teamId: TeamId | null;
   connected: boolean;
   npc: boolean;
+  demoRole: DemoRole | null;
   knows: boolean;
   drawer: boolean;
 }

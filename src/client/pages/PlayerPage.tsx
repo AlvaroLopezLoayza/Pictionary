@@ -31,12 +31,9 @@ export function PlayerPage() {
   return <main className={`player-page team-bg-${state.self.teamId ?? 'none'}`}>
     <Scoreboard a={state.scores.A} b={state.scores.B} center={<Timer endsAt={state.phaseEndsAt} serverNow={state.serverNow} urgent={state.phase === 'grace'} />} />
     <section className="player-content">
-      <div className="player-identity"><Avatar player={state.self} compact /><div><span>{state.self.name}</span><strong>{state.mode === 'demo' ? 'DIBUJANTE DEMO' : state.self.teamId ? `EQUIPO ${state.self.teamId}` : 'SIN EQUIPO'}</strong></div></div>
-      {state.mode === 'demo' && <section className="demo-party" aria-label="Jugadores NPC de la demo">
-        <span className="demo-badge">DEMO</span>
-        <div>{state.players.filter(player => player.npc).map(player => <Avatar key={player.id} player={player} compact />)}</div>
-      </section>}
+      <div className="player-identity"><Avatar player={state.self} compact /><div><span>{state.self.name}</span><strong>{state.self.demoRole === 'drawer' ? 'DIBUJANTE DEMO' : state.self.demoRole === 'guesser' ? 'ADIVINADOR DEMO' : state.self.teamId ? `EQUIPO ${state.self.teamId}` : 'SIN EQUIPO'}</strong></div></div>
       <RoleView state={state} socket={socket} setError={setError} />
+      {state.mode === 'demo' && <details className="demo-party"><summary>Ver equipos de la demo</summary><div>{state.players.filter(player => player.npc).map(player => <Avatar key={player.id} player={player} compact />)}</div></details>}
       {error && <div className="error-box" role="alert">{error}<button aria-label="Cerrar" onClick={() => setError('')}>×</button></div>}
     </section>
   </main>;
@@ -51,29 +48,33 @@ function Registration({ socket, eventToken, error, setError }: { socket: Socket;
     if (result.ok) localStorage.setItem('pictionary.playerToken', result.data.token); else setError(result.message);
   };
   return <main className="registration-page scanlines"><form className="panel registration-card" onSubmit={submit}>
-    <p className="eyebrow">PLAYER SELECT</p><h1>ELIGE TU AVATAR</h1>
-    <label>Tu nombre<input value={name} onChange={e => setName(e.target.value)} minLength={2} maxLength={20} autoComplete="nickname" required /></label>
+    <p className="eyebrow">ENTRAR A LA PARTIDA</p><h1>¿CÓMO TE LLAMAS?</h1>
+    <label>Tu nombre<input value={name} onChange={e => setName(e.target.value)} minLength={2} maxLength={20} autoComplete="nickname" placeholder="Escribe tu nombre" required autoFocus /></label>
+    <p className="picker-label">Elige un avatar</p>
     <div className="avatar-picker" role="radiogroup" aria-label="Avatares">
       {Array.from({ length: 12 }, (_, id) => {
-        const fake: PublicPlayer = { id: String(id), name: `P${id + 1}`, avatarId: id, teamId: null, connected: true, npc: false, knows: false, drawer: false };
+        const fake: PublicPlayer = { id: String(id), name: `P${id + 1}`, avatarId: id, teamId: null, connected: true, npc: false, demoRole: null, knows: false, drawer: false };
         return <button type="button" className={avatarId === id ? 'selected' : ''} onClick={() => setAvatarId(id)} aria-label={`Avatar ${id + 1}`} aria-pressed={avatarId === id} key={id}><Avatar player={fake} compact /></button>;
       })}
     </div>
     {error && <p className="form-error">{error}</p>}
-    <button className="button primary" disabled={!name.trim()}>ENTRAR AL LOBBY</button>
+    <button className="button primary" disabled={!name.trim()}>Entrar a la partida</button>
   </form></main>;
 }
 
 function RoleView({ state, socket, setError }: { state: PlayerState; socket: Socket; setError: (v: string) => void }) {
   const drawing = state.role === 'drawer' && ['drawing', 'grace'].includes(state.phase);
-  if (state.phase === 'finished') return <section className="role-card victory-card"><p>PARTIDA TERMINADA</p><h1>{state.scores.A === state.scores.B ? 'EMPATE' : `GANÓ EL EQUIPO ${state.scores.A > state.scores.B ? 'A' : 'B'}`}</h1></section>;
-  if (state.phase === 'results') return <section className="role-card"><p>LA PALABRA ERA</p><h1 className="secret-word">{state.lastWord}</h1><p>Espera el siguiente turno.</p></section>;
-  if (state.phase === 'paused') return <section className="role-card"><p className="eyebrow">PAUSA</p><h1>NO TE VAYAS</h1><p>El administrador reanudará el juego.</p></section>;
-  if (state.role === 'unassigned') return <section className="role-card"><p className="eyebrow">LOBBY</p><h1>ESPERANDO EQUIPO</h1><p>El administrador te asignará al Equipo A o B.</p></section>;
+  if (state.phase === 'finished') return <section className="role-card victory-card"><p className="eyebrow">PARTIDA TERMINADA</p><h1>{state.scores.A === state.scores.B ? 'EMPATE' : `GANÓ EL EQUIPO ${state.scores.A > state.scores.B ? 'A' : 'B'}`}</h1><p>Ya puedes mirar el resultado final en la pantalla Host.</p></section>;
+  if (state.phase === 'results') return <section className="role-card"><p className="eyebrow">TURNO TERMINADO</p><h1 className="secret-word">{state.lastWord}</h1><p>No necesitas hacer nada. El Admin preparará el siguiente turno.</p></section>;
+  if (state.phase === 'paused') {
+    const missing = state.players.filter(player => player.demoRole && !player.connected);
+    return <section className="role-card"><p className="eyebrow">PARTIDA EN PAUSA</p><h1>MANTÉN ESTA PANTALLA ABIERTA</h1><p>{missing.length ? `Esperando a ${missing.map(player => player.name).join(' y ')}.` : 'El Admin reanudará la partida cuando todos estén listos.'}</p></section>;
+  }
+  if (state.role === 'unassigned') return <section className="role-card"><p className="eyebrow">TU FUNCIÓN</p><h1>ESPERA LA ASIGNACIÓN</h1><p>El Admin está preparando los equipos.</p></section>;
   if (state.role === 'drawer') return <section className={`role-card drawer-card ${drawing ? 'drawing-card' : ''}`}>
-    <p className="eyebrow">ERES DIBUJANTE</p>
+    <p className="eyebrow">TU FUNCIÓN · DIBUJAR</p>
     <h1 className="secret-word">{state.secretWord}</h1>
-    {state.phase === 'reveal' && <><p>Memoriza la palabra. No dibujes letras ni números.</p><Timer endsAt={state.phaseEndsAt} serverNow={state.serverNow} /></>}
+    {state.phase === 'reveal' && <><p>Memoriza esta palabra. El lienzo se abrirá automáticamente.</p><Timer endsAt={state.phaseEndsAt} serverNow={state.serverNow} /></>}
     {drawing && <GameCanvas strokes={state.strokes} enabled
       onStart={id => socket.emit('draw:start', { id })}
       onPoints={(id, points) => socket.emit('draw:points', { id, points })}
@@ -81,13 +82,13 @@ function RoleView({ state, socket, setError }: { state: PlayerState; socket: Soc
       onUndo={() => socket.emit('draw:undo')}
       onClear={() => socket.emit('draw:clear')}
     />}
-    {!drawing && state.phase !== 'reveal' && <p>Tu lienzo se habilitará al comenzar.</p>}
+    {!drawing && state.phase !== 'reveal' && <p>No necesitas hacer nada hasta el siguiente turno.</p>}
   </section>;
   if ((state.role === 'guesser' && ['drawing', 'grace'].includes(state.phase)) || (state.role === 'stealer' && state.phase === 'steal')) {
     return <GuessCard state={state} socket={socket} setError={setError} />;
   }
-  const message = state.role === 'rival' ? 'Observa el dibujo. Si fallan, tendrás 10 segundos para robar.' : 'Espera a que comience el siguiente turno.';
-  return <section className="role-card"><p className="eyebrow">EN ESPERA</p><h1>{state.activeTeamId ? `JUEGA EL EQUIPO ${state.activeTeamId}` : 'PREPÁRATE'}</h1><p>{message}</p></section>;
+  const message = state.role === 'rival' ? 'Observa el dibujo. Te avisaremos si puedes intentar el robo.' : state.self.demoRole === 'guesser' && state.phase === 'reveal' ? 'El dibujante está memorizando la palabra. Tu respuesta se habilitará enseguida.' : 'No necesitas hacer nada hasta el siguiente turno.';
+  return <section className="role-card"><p className="eyebrow">QUÉ HACER AHORA</p><h1>{state.activeTeamId ? `JUEGA EL EQUIPO ${state.activeTeamId}` : 'ESPERA UN MOMENTO'}</h1><p>{message}</p></section>;
 }
 
 function GuessCard({ state, socket, setError }: { state: PlayerState; socket: Socket; setError: (v: string) => void }) {
@@ -99,14 +100,14 @@ function GuessCard({ state, socket, setError }: { state: PlayerState; socket: So
     if (!result.ok) setError(result.message);
     else { setFeedback(result.data === 'correct' ? '¡CORRECTO!' : 'No es. Intenta otra vez.'); setAnswer(''); }
   };
-  if (state.answeredCorrectly) return <section className="role-card correct-card"><span className="burst-icon">✓</span><h1>¡LO SABES!</h1><p>Tu avatar ya brilla en la pantalla.</p></section>;
-  if (!state.attemptsLeft) return <section className="role-card locked-card"><h1>SIN INTENTOS</h1><p>Espera al siguiente turno.</p></section>;
+  if (state.answeredCorrectly) return <section className="role-card correct-card"><span className="burst-icon">✓</span><h1>¡RESPUESTA CORRECTA!</h1><p>No necesitas hacer nada más en este turno.</p></section>;
+  if (!state.attemptsLeft) return <section className="role-card locked-card"><p className="eyebrow">TRES INTENTOS USADOS</p><h1>ESPERA EL SIGUIENTE TURNO</h1><p>Puedes seguir mirando el dibujo en la pantalla Host.</p></section>;
   return <form className="role-card guess-card" onSubmit={submit}>
-    <p className="eyebrow">{state.role === 'stealer' ? '¡ROBA 250 PUNTOS!' : state.phase === 'grace' ? 'TIEMPO DE GRACIA' : 'TU RESPUESTA'}</p>
+    <p className="eyebrow">{state.role === 'stealer' ? 'TU FUNCIÓN · INTENTAR EL ROBO' : 'TU FUNCIÓN · ADIVINAR'}</p>
     <h1>¿QUÉ ESTÁ DIBUJANDO?</h1>
     <label className="sr-only" htmlFor="answer">Respuesta</label>
     <input id="answer" value={answer} onChange={e => setAnswer(e.target.value)} maxLength={80} autoComplete="off" autoFocus placeholder="Escribe aquí..." />
-    <button className="button primary" disabled={!answer.trim()}>ENVIAR</button>
+    <button className="button primary" disabled={!answer.trim()}>Enviar respuesta</button>
     <div className="attempts">INTENTOS: {Array.from({ length: 3 }, (_, i) => <span className={i < state.attemptsLeft ? 'active' : ''} key={i} />)}</div>
     {feedback && <p className={feedback.startsWith('¡') ? 'success-text' : 'form-error'}>{feedback}</p>}
   </form>;

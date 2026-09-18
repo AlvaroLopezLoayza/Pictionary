@@ -40,7 +40,7 @@ export const normalizeAnswer = (value: string): string => value
 export const majorityFor = (eligible: number): number => eligible > 0 ? Math.floor(eligible / 2) + 1 : 0;
 
 export const freshMatch = (): MatchState => ({
-  mode: 'live', demoDrawerId: null,
+  mode: 'live', demoDrawerId: null, demoGuesserId: null,
   phase: 'lobby', resumePhase: null, phaseEndsAt: null, pausedRemainingMs: null,
   lobbyOpen: true, turnIndex: 0, startingTeam: Math.random() < .5 ? 'A' : 'B', turn: null,
   usedWordIds: [], drawerQueues: { A: [], B: [] }, scores: [],
@@ -138,19 +138,23 @@ export class GameEngine {
     this.startTurn(now);
   }
 
-  startDemo(now = Date.now()): void {
+  startDemo(drawerId: string, now = Date.now()): void {
     if (this.state.match.phase !== 'lobby') throw new GameError('BAD_PHASE', 'La partida ya comenzó.');
     const humans = this.state.players.filter(player => !player.npc && player.connected);
-    if (humans.length !== 1) throw new GameError('DEMO_PLAYERS', 'Conecta exactamente un dibujante para iniciar la demo.');
+    if (humans.length !== 2) throw new GameError('DEMO_PLAYERS', 'Conecta exactamente dos jugadores para iniciar la demo.');
+    const drawer = humans.find(player => player.id === drawerId);
+    if (!drawer) throw new GameError('DEMO_DRAWER', 'Elige como dibujante a uno de los jugadores conectados.');
     this.assertWordBank();
-    const drawer = humans[0];
+    const guesser = humans.find(player => player.id !== drawer.id)!;
     drawer.teamId = null;
     drawer.npc = false;
-    this.state.players = [drawer, ...demoNpcs.map(npc => ({
+    guesser.teamId = null;
+    guesser.npc = false;
+    this.state.players = [drawer, guesser, ...demoNpcs.map(npc => ({
       id: randomUUID(), name: npc.name, avatarId: npc.avatarId, teamId: npc.teamId,
       connected: true, disconnectAt: null, sessionHash: this.hash(randomBytes(32).toString('base64url')), npc: true,
     }))];
-    this.state.match = { ...freshMatch(), mode: 'demo', demoDrawerId: drawer.id, startingTeam: 'A', lobbyOpen: false };
+    this.state.match = { ...freshMatch(), mode: 'demo', demoDrawerId: drawer.id, demoGuesserId: guesser.id, startingTeam: 'A', lobbyOpen: false };
     this.startTurn(now);
   }
 
@@ -191,7 +195,10 @@ export class GameEngine {
         player.connected = false;
         player.disconnectAt = null;
         this.changed();
-        if (this.state.match.turn?.drawerId === player.id && ['reveal', 'drawing', 'grace'].includes(this.state.match.phase)) this.pause(now);
+        const match = this.state.match;
+        const demoHuman = match.mode === 'demo' && (match.demoDrawerId === player.id || match.demoGuesserId === player.id);
+        if ((demoHuman && ['reveal', 'drawing', 'grace', 'steal'].includes(match.phase)) ||
+          (match.turn?.drawerId === player.id && ['reveal', 'drawing', 'grace'].includes(match.phase))) this.pause(now);
       }
     }
     this.runDemo(now);
@@ -210,7 +217,7 @@ export class GameEngine {
 
   private beginDrawing(now: number): void {
     const turn = this.turn();
-    turn.initialGuesserIds = this.connectedTeam(turn.activeTeamId).filter(p => p.id !== turn.drawerId).map(p => p.id);
+    turn.initialGuesserIds = this.eligibleGuessers(turn.activeTeamId).map(p => p.id);
     if (!turn.initialGuesserIds.length) {
       this.phase('paused', null, now);
       this.state.match.resumePhase = 'drawing';
@@ -223,7 +230,7 @@ export class GameEngine {
 
   private beginSteal(now: number): void {
     const turn = this.turn();
-    if (!this.connectedTeam(otherTeam(turn.activeTeamId)).length) return this.phase('results', null, now);
+    if (!this.eligibleGuessers(otherTeam(turn.activeTeamId)).length) return this.phase('results', null, now);
     this.phase('steal', 10_000, now);
   }
 
@@ -258,8 +265,9 @@ export class GameEngine {
     const player = this.player(playerId);
     const turn = this.turn();
     const phase = this.state.match.phase;
-    const activeGuess = (phase === 'drawing' || phase === 'grace') && player.teamId === turn.activeTeamId && player.id !== turn.drawerId;
-    const stealGuess = phase === 'steal' && player.teamId === otherTeam(turn.activeTeamId);
+    const demoGuesser = this.state.match.mode === 'demo' && this.state.match.demoGuesserId === player.id;
+    const activeGuess = (phase === 'drawing' || phase === 'grace') && (player.teamId === turn.activeTeamId || demoGuesser) && player.id !== turn.drawerId;
+    const stealGuess = phase === 'steal' && (player.teamId === otherTeam(turn.activeTeamId) || demoGuesser);
     if (!player.connected || (!activeGuess && !stealGuess)) throw new GameError('NOT_ALLOWED', 'No puedes responder en esta fase.');
     if (turn.correctAt[playerId]) throw new GameError('ALREADY_CORRECT', 'Ya acertaste esta palabra.');
     const used = turn.attempts[playerId] ?? 0;
@@ -292,7 +300,7 @@ export class GameEngine {
   private maybeReachMajority(now: number): void {
     if (this.state.match.phase !== 'drawing') return;
     const turn = this.turn();
-    const eligible = this.connectedTeam(turn.activeTeamId).filter(p => p.id !== turn.drawerId);
+    const eligible = this.eligibleGuessers(turn.activeTeamId);
     const correct = eligible.filter(p => Boolean(turn.correctAt[p.id])).length;
     if (eligible.length && correct >= majorityFor(eligible.length)) {
       const elapsed = now - (turn.drawingStartedAt ?? now);
@@ -326,6 +334,7 @@ export class GameEngine {
     const phase = match.resumePhase;
     const remaining = match.pausedRemainingMs ?? 0;
     if (match.turn && !this.isConnected(match.turn.drawerId)) throw new GameError('DRAWER_OFFLINE', 'El dibujante debe reconectarse antes de reanudar.');
+    if (match.mode === 'demo' && match.demoGuesserId && !this.isConnected(match.demoGuesserId)) throw new GameError('GUESSER_OFFLINE', 'El adivinador debe reconectarse antes de reanudar.');
     match.phase = phase;
     match.phaseEndsAt = now + remaining;
     match.resumePhase = null;
@@ -428,7 +437,7 @@ export class GameEngine {
 
   publicState(now = Date.now()): PublicState {
     const turn = this.state.match.turn;
-    const activeEligible = turn ? this.connectedTeam(turn.activeTeamId).filter(p => p.id !== turn.drawerId) : [];
+    const activeEligible = turn ? this.eligibleGuessers(turn.activeTeamId) : [];
     const result: PublicState = {
       version: this.revision, serverNow: now, mode: this.state.match.mode ?? 'live', phase: this.state.match.phase,
       phaseEndsAt: this.state.match.phaseEndsAt, roundNumber: turn?.roundNumber ?? null,
@@ -436,6 +445,7 @@ export class GameEngine {
       scores: { A: this.score('A'), B: this.score('B') },
       players: this.state.players.map(p => ({
         id: p.id, name: p.name, avatarId: p.avatarId, teamId: p.teamId, connected: p.connected, npc: Boolean(p.npc),
+        demoRole: this.state.match.demoDrawerId === p.id ? 'drawer' : this.state.match.demoGuesserId === p.id ? 'guesser' : null,
         knows: Boolean(turn?.correctAt[p.id]), drawer: turn?.drawerId === p.id,
       })),
       guessed: activeEligible.filter(p => Boolean(turn?.correctAt[p.id])).length,
@@ -474,6 +484,11 @@ export class GameEngine {
     const turn = this.state.match.turn;
     if (!turn) return player.teamId ? 'waiting' : 'unassigned';
     if (turn.drawerId === playerId) return 'drawer';
+    if (this.state.match.mode === 'demo' && this.state.match.demoGuesserId === playerId) {
+      if (this.state.match.phase === 'steal') return 'stealer';
+      if (['drawing', 'grace'].includes(this.state.match.phase)) return 'guesser';
+      return 'waiting';
+    }
     if (!player.teamId) return 'unassigned';
     if (player.teamId === turn.activeTeamId) return 'guesser';
     if (this.state.match.phase === 'steal') return 'stealer';
@@ -491,6 +506,13 @@ export class GameEngine {
     if (this.availableWords('easy').length < 4 || this.availableWords('hard').length < 6) throw new GameError('WORD_BANK', 'Se requieren al menos 4 palabras fáciles y 6 difíciles habilitadas.');
   }
   private connectedTeam(teamId: TeamId): Player[] { return this.state.players.filter(p => p.teamId === teamId && p.connected); }
+  private eligibleGuessers(teamId: TeamId): Player[] {
+    const players = this.connectedTeam(teamId).filter(player => player.id !== this.state.match.turn?.drawerId);
+    const guesser = this.state.match.mode === 'demo' && this.state.match.demoGuesserId
+      ? this.state.players.find(player => player.id === this.state.match.demoGuesserId && player.connected)
+      : undefined;
+    return guesser ? [...players, guesser] : players;
+  }
   private isConnected(id: string): boolean { return Boolean(this.state.players.find(p => p.id === id)?.connected); }
   private availableWords(difficulty: Difficulty): WordCard[] { return this.state.words.filter(w => w.enabled && w.difficulty === difficulty); }
   private player(id: string): Player {

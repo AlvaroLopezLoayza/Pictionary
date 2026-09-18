@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { io, type Socket } from 'socket.io-client';
 import type { Ack, AdminState, PlayerState, PublicState } from '../src/shared/types.js';
 
@@ -32,7 +33,7 @@ const host = io(url, { auth: { viewer: 'host', eventToken: adminState.eventToken
 const publicPromise = once<PublicState>(host, 'state:public');
 const player = io(url, { auth: { viewer: 'player', eventToken: adminState.eventToken }, transports: ['websocket'] });
 await once<void>(player, 'connect');
-const deniedDemo = await emit(player, 'admin:demo:start');
+const deniedDemo = await emit(player, 'admin:demo:start', { drawerId: randomUUID() });
 assert.equal(deniedDemo.ok, false);
 if (!deniedDemo.ok) assert.equal(deniedDemo.code, 'FORBIDDEN');
 const playerPromise = once<PlayerState>(player, 'state:player');
