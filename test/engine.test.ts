@@ -259,3 +259,21 @@ test('snapshot demo conserva NPCs conectados y espera a ambos humanos', async ()
     assert.equal(restored.state.players.length, 0);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('snapshot demo antiguo sin adivinador sigue siendo recuperable', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'garabato-demo-legacy-'));
+  try {
+    const store = new StateStore(dir);
+    const { engine, drawerId, drawerToken, guesserId } = demo(Date.now());
+    engine.state.players = engine.state.players.filter(player => player.id !== guesserId);
+    delete (engine.state.match as Partial<typeof engine.state.match>).demoGuesserId;
+    await store.save(engine.state);
+
+    const restored = await store.load();
+    assert.equal(restored.state.match.demoGuesserId, null);
+    assert.equal(restored.state.match.phase, 'paused');
+    restored.resumePlayer(drawerToken);
+    assert.doesNotThrow(() => restored.resumeGame());
+    assert.equal(restored.state.match.demoDrawerId, drawerId);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
